@@ -19,7 +19,13 @@
 ### Installation
 ****
 ```bash
-npm install @envoy1084/effect-redis effect redis @effect/platform
+npm install @envoy1084/effect-redis effect @effect/platform-node
+# or
+yarn add @envoy1084/effect-redis effect @effect/platform-node
+# or
+pnpm add @envoy1084/effect-redis effect @effect/platform-node
+# or
+bun add @envoy1084/effect-redis effect @effect/platform-node
 ```
 
 ### Basic Usage
@@ -1035,6 +1041,32 @@ const program = Effect.gen(function* () {
 const AppLayer = Layer.mergeAll(RedisLayer, myServiceLive);
 program.pipe(Effect.provide(AppLayer), runMain);
 ```
+## Future Work
+
+Following command groups are supported:
+
+- [x] String commands
+- [x] Hash commands
+- [x] List commands
+- [x] Set commands
+- [x] Sorted set commands
+- [ ] Stream commands
+- [x] Bitmap commands
+- [x] HyperLogLog commands
+- [x] Geospatial commands
+- [x] JSON commands
+- [ ] Search commands
+- [ ] Time series commands
+- [ ] Vector set commands
+- [ ] Pub/Sub commands
+- [x] Transaction commands (Pipeline and Multi)
+- [x] Scripting commands
+- [ ] Connection commands
+- [ ] Server commands
+- [ ] Cluster commands
+- [x] Generic commands
+  
+We are working on adding support for other Redis command groups. If you have any suggestions or requests, please feel free to open an issue or submit a pull request.
 
 ## Contributing
 
