@@ -8,7 +8,7 @@
     "effect": "^3.19.15",
     "redis": "^5.10.0"
   },
-  "description": "Effectful wrapper for Redis Client",
+  "description": "Effect bindings for Redis",
   "devDependencies": {
     "@biomejs/biome": "2.3.13",
     "@changesets/cli": "^2.29.8",
@@ -34,9 +34,19 @@
     "LICENSE"
   ],
   "homepage": "https://github.com/envoy1084/effect-redis#readme",
-  "keywords": [],
+  "keywords": [
+    "redis",
+    "effect",
+    "effect-ts",
+    "fp",
+    "functional",
+    "wrapper",
+    "database",
+    "cache"
+  ],
   "license": "MIT",
   "name": "@envoy1084/effect-redis",
+  "private": false,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/envoy1084/effect-redis.git"
