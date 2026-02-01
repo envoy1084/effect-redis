@@ -132,12 +132,6 @@ export const RedisCoreLive = Layer.effect(
   RedisCore,
   Effect.gen(function* () {
     const { client } = yield* RedisConnection;
-
-    client.eval("return redis.call('GET',KEYS[1])", {
-      arguments: [],
-      keys: ["key"],
-    });
-
     return makeRedisCore(client);
   }),
 );

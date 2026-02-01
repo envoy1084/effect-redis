@@ -4,7 +4,7 @@
 
 ## What is This?
 
-**effect-redis** is a comprehensive Redis client wrapper built on top of [Effect](https://effect.website/) and the [redis](https://www.npmjs.com/package/redis) npm package. It provides:
+**effect-redis** is a Redis client wrapper built on top of [Effect](https://effect.website/) and the [redis](https://www.npmjs.com/package/redis) npm package. It provides:
 
 - **Effect-based API**: Full integration with Effect's functional error handling, dependency injection, and compositional patterns
 - **Type-safe operations**: TypeScript types for all Redis commands with proper argument and return type validation
@@ -209,7 +209,7 @@ const program = Effect.gen(function* () {
   yield* redis.hDel("user:1", "email");
 
   // Expiration (Redis 7.4+)
-  yield* redis.hExpire("user:1", 3600, ["name", "email"]);
+  yield* redis.hExpire("user:1", ["name", "email"], 3600);
   const ttl = yield* redis.hTTL("user:1", "name");
 });
 ```
@@ -232,7 +232,7 @@ const program = Effect.gen(function* () {
 
   // Push operations
   yield* redis.lPush("tasks", "task1");
-  yield* redis.lPush("tasks", "task2", "task3");
+  yield* redis.lPush("tasks", ["task2", "task3"]);
   yield* redis.rPush("tasks", "task4");
 
   // Pop operations
@@ -279,24 +279,19 @@ const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
   // Add and check members
-  yield* redis.sAdd("tags", "javascript", "typescript", "nodejs");
+  yield* redis.sAdd("tags", ["javascript", "typescript", "nodejs"]);
   const isMember = yield* redis.sIsMember("tags", "javascript");
   const allMembers = yield* redis.sMembers("tags");
   const count = yield* redis.sCard("tags");
 
   // Multiple membership check
-  const members = yield* redis.smIsMember("tags", [
-    "javascript",
-    "python",
-  ]);
+  const members = yield* redis.smIsMember("tags", ["javascript", "python"]);
 
   // Random members
   const randomMember = yield* redis.sRandMember("tags");
-  const randomMembers = yield* redis.sRandMember("tags", 2);
 
   // Pop operations
   const popped = yield* redis.sPop("tags");
-  const poppedMany = yield* redis.sPop("tags", 2);
 
   // Set operations
   const intersection = yield* redis.sInter(["tags", "languages"]);
@@ -315,7 +310,7 @@ const program = Effect.gen(function* () {
   yield* redis.sMove("tags", "languages", "javascript");
 
   // Scan
-  const scanResult = yield* redis.sScan("tags", 0);
+  const scanResult = yield* redis.sScan("tags", "0");
 });
 ```
 
@@ -335,61 +330,48 @@ Sorted set commands operate on sets with scores that determine order.
 const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
-  // Add members with scores
+  // Reset for deterministic output
+  yield* redis.del("leaderboard");
+  yield* redis.del("active_players");
+  yield* redis.del("leaderboard");
+
+  // Seed data
   yield* redis.zAdd("leaderboard", [
-    { score: 100, member: "Alice" },
-    { score: 90, member: "Bob" },
-    { score: 85, member: "Charlie" },
+    { score: 100, value: "Alice" },
+    { score: 90, value: "Bob" },
+    { score: 85, value: "Charlie" },
   ]);
 
-  // Get score
+  yield* redis.zAdd("active_players", [
+    { score: 1, value: "Alice" },
+    { score: 1, value: "Bob" },
+  ]);
+
+  // Reads
   const score = yield* redis.zScore("leaderboard", "Alice");
-  const scores = yield* redis.zmScore("leaderboard", [
-    "Alice",
-    "Bob",
-  ]);
+  const scores = yield* redis.zmScore("leaderboard", ["Alice", "Bob"]);
 
-  // Rank operations (0-indexed, ascending by default)
   const rank = yield* redis.zRank("leaderboard", "Alice");
   const revRank = yield* redis.zRevRank("leaderboard", "Alice");
 
-  // Count
   const total = yield* redis.zCard("leaderboard");
   const inRange = yield* redis.zCount("leaderboard", 80, 100);
 
-  // Range operations
-  const topThree = yield* redis.zRange("leaderboard", 0, 2);
-  const topThreeScores = yield* redis.zRange("leaderboard", 0, 2, {
-    withScores: true,
-  });
+  // Ranges
+  const topThreeByRank = yield* redis.zRange("leaderboard", 0, 2);
+  const topThreeByScore = yield* redis.zRangeByScore("leaderboard", 85, 100);
 
-  // Range by score
-  const highScorers = yield* redis.zRangeByScore("leaderboard", 90, 100);
-
-  // Range by lex
   const lexRange = yield* redis.zRangeByLex("leaderboard", "-", "+");
 
-  // Pop operations
+  // Set ops
+  const inter = yield* redis.zInter(["leaderboard", "active_players"]);
+  const union = yield* redis.zUnion(["leaderboard", "active_players"]);
+
+  const scanResult = yield* redis.zScan("leaderboard", "0");
+
+  // Mutations LAST
   const highest = yield* redis.zPopMax("leaderboard");
   const lowest = yield* redis.zPopMin("leaderboard");
-
-  // Increment score
-  yield* redis.zIncrBy("leaderboard", 10, "Bob");
-
-  // Remove
-  yield* redis.zRem("leaderboard", "Charlie");
-  yield* redis.zRemRangeByRank("leaderboard", 0, 1);
-  yield* redis.zRemRangeByScore("leaderboard", 0, 50);
-
-  // Set operations
-  const inter = yield* redis.zInter(["leaderboard", "active_players"]);
-  yield* redis.zInterStore("top_active", 2, ["leaderboard", "active_players"]);
-
-  const union = yield* redis.zUnion(["leaderboard", "archive"]);
-  yield* redis.zUnionStore("all_time", 2, ["leaderboard", "archive"]);
-
-  // Scan
-  const scanResult = yield* redis.zScan("leaderboard", 0);
 });
 ```
 
@@ -412,68 +394,63 @@ Generic commands work with all data types.
 const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
-  // Check existence
-  const exists = yield* redis.exists(["key1", "key2", "key3"]);
+  const exists = yield* redis
+    .exists(["key1", "key2", "key3"])
+    .pipe(Effect.catchTag("RedisError", () => Effect.succeed(0)));
 
-  // Get type
   const type = yield* redis.type("mykey");
 
-  // Delete keys
   yield* redis.del(["key1", "key2"]);
-  yield* redis.unlink(["key3", "key4"]); // Async delete
+  yield* redis.unlink(["key3", "key4"]); // async delete
 
-  // Expiration
-  yield* redis.expire("tempkey", 3600); // 1 hour in seconds
+  yield* redis.expire("tempkey", 3600); // seconds
+  const ttl = yield* redis.ttl("tempkey");
+  const pttl = yield* redis.pTTL("tempkey");
+
   yield* redis.expireAt("tempkey", Math.floor(Date.now() / 1000) + 3600);
-  yield* redis.pExpire("tempkey", 3600000); // milliseconds
-  yield* redis.pExpireAt("tempkey", Date.now() + 3600000);
+  yield* redis.pExpireAt("tempkey", Date.now() + 3_600_000);
 
-  const ttl = yield* redis.ttl("tempkey"); // seconds
-  const pttl = yield* redis.pTTL("tempkey"); // milliseconds
-  yield* redis.persist("tempkey"); // Remove expiration
+  const expirationTime = yield* redis.expireTime("tempkey");
+  const pExpirationTime = yield* redis.pExpireTime("tempkey");
 
-  // Get expiration time
-  const expirationTime = yield* redis.expireTime("tempkey"); // Unix timestamp in seconds
-  const pExpirationTime = yield* redis.pExpireTime("tempkey"); // Unix timestamp in milliseconds
+  yield* redis.persist("tempkey");
 
-  // Rename
-  yield* redis.rename("oldkey", "newkey");
-  yield* redis.renameNX("oldkey", "newkey"); // Only if newkey doesn't exist
+  yield* redis.set("oldkey", "some value");
+  yield* redis.set("newkey", "some other value");
+  yield* redis
+    .rename("oldkey", "newkey")
+    .pipe(Effect.catchTag("RedisError", () => Effect.succeed(undefined)));
 
-  // Copy
-  yield* redis.copy("source", "destination");
+  const renamed = yield* redis
+    .exists("oldkey")
+    .pipe(
+      Effect.flatMap((exists) =>
+        exists === 1 ? redis.renameNX("oldkey", "newkey") : Effect.succeed(0),
+      ),
+    );
 
-  // Keys pattern matching
-  const allKeys = yield* redis.keys("*");
-  const userKeys = yield* redis.keys("user:*");
+  yield* redis.copy("source", "destination", { REPLACE: true });
 
-  // Random key
-  const randomKey = yield* redis.randomKey();
-
-  // Scan (cursor-based iteration)
-  const scanResult = yield* redis.scan(0, { pattern: "user:*", count: 10 });
-
-  // Sort
-  const sorted = yield* redis.sort("mylist", {
-    by: "weight_*",
-    limit: { offset: 0, count: 10 },
-    get: ["object_*", "#"],
-    alpha: true,
-    direction: "DESC",
+  const scanResult = yield* redis.scan("0", {
+    COUNT: 10,
+    MATCH: "user:*",
   });
 
-  // Touch (update last access time)
+  const userKeys = scanResult.keys;
+
+  const randomKey = yield* redis.randomKey();
+
+  const sorted = yield* redis.sort("mylist", {
+    ALPHA: true,
+    BY: "weight_*",
+    DIRECTION: "DESC",
+    GET: ["object_*", "#"],
+    LIMIT: { count: 10, offset: 0 },
+  });
+
   const touched = yield* redis.touch(["key1", "key2"]);
 
-  // Dump and restore
   const serialized = yield* redis.dump("mykey");
-  yield* redis.restore("newkey", 0, serialized);
-
-  // Migrate (move to another Redis instance)
-  yield* redis.migrate("target-host", 6379, "mykey", 0, 5000);
-
-  // Wait for replication
-  yield* redis.wait(1, 1000); // Wait for 1 replica within 1000ms
 });
 ```
 
@@ -493,73 +470,88 @@ JSON commands store and manipulate JSON documents (requires Redis Stack).
 const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
-  // Set JSON value
   yield* redis.json.set("user:1", "$", {
-    name: "Alice",
     age: 30,
-    tags: ["developer", "typescript"],
     metadata: {
-      created: "2024-01-01",
       active: true,
+      created: "2024-01-01",
     },
+    name: "Alice",
+    tags: ["developer", "typescript"],
   });
 
-  // Get JSON value
   const user = yield* redis.json.get("user:1");
-  const name = yield* redis.json.get("user:1", { path: "$.name" });
 
-  // Update specific path
+  const name = yield* redis.json.get("user:1", {
+    path: "$.name",
+  }); // → ["Alice"]
+
   yield* redis.json.set("user:1", "$.age", 31);
 
-  // String operations
-  yield* redis.json.strAppend("user:1", "$.name", " Smith");
-  const nameLength = yield* redis.json.strLen("user:1", "$.name");
+  yield* redis.json.strAppend("user:1", " Smith", {
+    path: "$.name",
+  });
 
-  // Numeric operations
+  const nameLength = yield* redis.json.strLen("user:1", {
+    path: "$.name",
+  });
+  // → [number]
+
   yield* redis.json.numIncrBy("user:1", "$.age", 1);
   yield* redis.json.numMultBy("user:1", "$.age", 2);
 
-  // Array operations
   yield* redis.json.arrAppend("user:1", "$.tags", "nodejs");
+
   yield* redis.json.arrInsert("user:1", "$.tags", 0, "javascript");
-  const tagsLength = yield* redis.json.arrLen("user:1", "$.tags");
-  const tag = yield* redis.json.arrPop("user:1", "$.tags");
+
+  const tagsLength = yield* redis.json.arrLen("user:1", {
+    path: "$.tags",
+  });
+  // → [number]
+
+  const popped = yield* redis.json.arrPop("user:1", {
+    index: -1,
+    path: "$.tags",
+  }); // → ["nodejs"]
+
   yield* redis.json.arrTrim("user:1", "$.tags", 0, 2);
-  const tagIndex = yield* redis.json.arrIndex(
-    "user:1",
-    "$.tags",
-    "typescript",
-  );
 
-  // Object operations
-  const objKeys = yield* redis.json.objKeys("user:1", "$.metadata");
-  const objLen = yield* redis.json.objLen("user:1", "$.metadata");
+  const tagIndex = yield* redis.json.arrIndex("user:1", "$.tags", "typescript"); // → [number]
 
-  // Type checking
-  const valueType = yield* redis.json.type("user:1", "$");
+  const objKeys = yield* redis.json.objKeys("user:1", {
+    path: "$.metadata",
+  }); // → [["active", "created"]]
 
-  // Boolean toggle
+  const objLen = yield* redis.json.objLen("user:1", {
+    path: "$.metadata",
+  }); // → [number]
+
+  const valueType = yield* redis.json.type("user:1", {
+    path: "$",
+  });
+  // → ["object"];
+
   yield* redis.json.toggle("user:1", "$.metadata.active");
 
-  // Delete path
-  yield* redis.json.del("user:1", "$.metadata.created");
+  yield* redis.json.del("user:1", {
+    path: "$.metadata.active",
+  });
 
-  // Merge JSON
-  yield* redis.json.merge("user:1", "$", { lastLogin: "2024-01-15" });
-
-  // Multiple keys
   const users = yield* redis.json.mGet(["user:1", "user:2", "user:3"], "$");
+  // → Array<JSON[] | null>
 
-  // Multiple set
   yield* redis.json.mSet([
     { key: "user:4", path: "$", value: { name: "Bob" } },
     { key: "user:5", path: "$", value: { name: "Charlie" } },
   ]);
 
-  // Clear (sets arrays to [] and objects to {})
-  yield* redis.json.clear("user:1");
+  yield* redis.json.clear("user:1", {
+    path: "$.tags",
+  });
+  yield* redis.json.clear("user:1", {
+    path: "$.metadata",
+  });
 
-  // Debug memory (get memory usage)
   const memoryUsage = yield* redis.json.debugMemory("user:1");
 });
 ```
@@ -585,16 +577,16 @@ const program = Effect.gen(function* () {
   // Add locations
   yield* redis.geoAdd("cities", [
     {
-      longitude: -122.419,
       latitude: 37.775,
+      longitude: -122.419,
       member: "San Francisco",
     },
     {
-      longitude: -118.243,
       latitude: 34.052,
+      longitude: -118.243,
       member: "Los Angeles",
     },
-    { longitude: -87.629, latitude: 41.878, member: "Chicago" },
+    { latitude: 41.878, longitude: -87.629, member: "Chicago" },
   ]);
 
   // Get positions
@@ -620,8 +612,11 @@ const program = Effect.gen(function* () {
   // Find nearby locations
   const nearby = yield* redis.geoRadius(
     "cities",
-    -122.419,
-    37.775,
+    {
+      latitude: 37.775,
+
+      longitude: -122.419,
+    },
     100,
     "km",
   );
@@ -635,20 +630,21 @@ const program = Effect.gen(function* () {
   );
 
   // Search in box/circle (Redis 6.2+)
-  const searchBox = yield* redis.geoSearch("cities", {
-    member: "San Francisco",
-    byBox: { width: 200, height: 200, unit: "km" },
+  const searchBox = yield* redis.geoSearch("cities", "San Francisco", {
+    height: 200,
+    unit: "km",
+    width: 200,
   });
 
-  const searchCircle = yield* redis.geoSearch("cities", {
-    member: "San Francisco",
-    byRadius: { radius: 100, unit: "km" },
+  const searchCircle = yield* redis.geoSearch("cities", "San Francisco", {
+    radius: 100,
+    unit: "km",
   });
 
   // Store search results
-  yield* redis.geoSearchStore("nearby", "cities", {
-    member: "San Francisco",
-    byRadius: { radius: 100, unit: "km" },
+  yield* redis.geoSearchStore("nearby", "cities", "San Francisco", {
+    radius: 100,
+    unit: "km",
   });
 });
 ```
@@ -673,12 +669,12 @@ const program = Effect.gen(function* () {
 
   // Count set bits
   const count = yield* redis.bitCount("bitmap");
-  const countRange = yield* redis.bitCount("bitmap", { start: 0, end: 10 });
+  const countRange = yield* redis.bitCount("bitmap", { end: 10, start: 0 });
 
   // Find first set/clear bit
   const firstSet = yield* redis.bitPos("bitmap", 1);
   const firstClear = yield* redis.bitPos("bitmap", 0);
-  const firstSetAfter = yield* redis.bitPos("bitmap", 1, { start: 5 });
+  const firstSetAfter = yield* redis.bitPos("bitmap", 1, 5);
 
   // Bitwise operations
   yield* redis.bitOp("AND", "dest", ["bitmap1", "bitmap2"]);
@@ -687,12 +683,10 @@ const program = Effect.gen(function* () {
   yield* redis.bitOp("NOT", "dest", ["bitmap1"]);
 
   // Bitfield operations
-  const fieldResult = yield* redis.bitField("mykey", {
-    operations: [
-      { type: "u4", offset: 0, operation: "GET" },
-      { type: "u4", offset: 4, operation: "SET", value: 15 },
-    ],
-  });
+  const fieldResult = yield* redis.bitField("mykey", [
+    { encoding: "u4", offset: 0, operation: "GET" },
+    { encoding: "u4", offset: 4, operation: "SET", value: 15 },
+  ]);
 });
 ```
 
@@ -709,8 +703,8 @@ const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
   // Add elements
-  yield* redis.pfAdd("hll", "a", "b", "c", "d", "e");
-  yield* redis.pfAdd("hll", "f", "g");
+  yield* redis.pfAdd("hll", ["a", "b", "c", "d", "e"]);
+  yield* redis.pfAdd("hll", ["f", "g"]);
 
   // Get cardinality (approximate count of unique elements)
   const count = yield* redis.pfCount(["hll"]);
@@ -736,14 +730,14 @@ Scripting commands allow server-side Lua script execution.
 const program = Effect.gen(function* () {
   const redis = yield* RedisCore;
 
+  yield* redis.set("mykey", "42");
+  yield* redis.set("counter", "8");
+
   // Execute Lua script
-  const result = yield* redis.eval(
-    "return redis.call('GET',KEYS[1])",
-    {
-      keys: ["mykey"],
-      arguments: [],
-    },
-  );
+  const result = yield* redis.eval("return redis.call('GET',KEYS[1])", {
+    arguments: [],
+    keys: ["mykey"],
+  });
 
   // Script with arguments
   const sum = yield* redis.eval(
@@ -753,8 +747,8 @@ const program = Effect.gen(function* () {
     return val1 + val2
     `,
     {
-      keys: ["counter"],
       arguments: ["10"],
+      keys: ["counter"],
     },
   );
 
@@ -763,8 +757,8 @@ const program = Effect.gen(function* () {
 
   // Execute by SHA
   const cachedResult = yield* redis.evalSha(sha, {
-    keys: [],
     arguments: [],
+    keys: [],
   });
 
   // Check if scripts exist
@@ -772,11 +766,6 @@ const program = Effect.gen(function* () {
 
   // Flush script cache
   yield* redis.scriptFlush();
-
-  // Function operations (Redis 7.0+)
-  yield* redis.functionLoad("#!lua name=mylib\n return 'hello'");
-  const functions = yield* redis.functionList();
-  yield* redis.functionFlush();
 });
 ```
 
@@ -813,21 +802,6 @@ const program = Effect.gen(function* () {
   // execResult is an array of responses from each command
   // null if transaction was aborted
   yield* Effect.log(`Exec responses: ${execResult}`);
-
-  // Transaction with condition
-  const [txResult, execOK] = yield* redis.multi((tx) =>
-    Effect.gen(function* () {
-      const currentValue = yield* tx.get("balance");
-
-      if (currentValue && Number(currentValue) >= 100) {
-        yield* tx.decrBy("balance", 100);
-        yield* tx.incrBy("savings", 100);
-        return true;
-      }
-
-      return false;
-    }),
-  );
 });
 ```
 
@@ -856,7 +830,7 @@ const program = Effect.gen(function* () {
   yield* Effect.log(`Pipeline result: ${result}`);
 
   // execResult is an array of responses from each command
-  yield* Effect.log(`Pipeline responses:`, execResult);
+  yield* Effect.log("Pipeline responses:", execResult);
 
   // Pipeline with many operations
   const [bulkResult, responses] = yield* redis.pipeline((pipe) =>
@@ -868,6 +842,9 @@ const program = Effect.gen(function* () {
       return "bulk operation complete";
     }),
   );
+
+  yield* Effect.log("Pipeline responses:", responses);
+  yield* Effect.log("Pipeline result:", bulkResult);
 });
 ```
 
